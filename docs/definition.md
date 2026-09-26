@@ -2,7 +2,7 @@
 
 |               |                                                                                                            |
 | ------------- | ---------------------------------------------------------------------------------------------------------- |
-| Integrantes   | Daniela Estrada Mesa, [Nombre del integrante 2], [Nombre del integrante 3]                                 |
+| Integrantes   | Daniela Estrada Mesa, [Ester Sofia Londoño], [Anderson Muñoz Rueda]                                 |
 | Curso y grupo | Programación Móvil IF2004, grupo 602                                                                       |
 | Fecha         | Septiembre de 2026                                                                                         |
 | Versión       | 1.0                                                                                                        |
