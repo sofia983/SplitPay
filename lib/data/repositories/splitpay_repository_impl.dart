@@ -1,27 +1,34 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/network/network_info.dart';
-import '../../core/notifications/notification_service.dart';
 import '../datasources/local/local_database_service.dart';
-import '../datasources/remote/firestore_remote_datasource.dart';
 
 typedef RegistroDato = Map<String, dynamic>;
 
 class SplitPayRepositoryImpl {
   final NetworkInfo networkInfo;
   final LocalDatabaseService localDb;
-  final FirestoreRemoteDatasource remoteDb;
+  final FirebaseFirestore _firestore;
 
   SplitPayRepositoryImpl({
     required this.networkInfo,
     required this.localDb,
-    required this.remoteDb,
-  });
+    FirebaseFirestore? firestore,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance;
 
-  /// Obtiene grupos: si hay internet consulta Firestore y actualiza SQLite;
-  /// si está offline lee directamente desde SQLite.
   Future<List<RegistroDato>> getGroups() async {
     final online = await networkInfo.isConnected;
     if (online) {
-      final remoteGroups = await remoteDb.getGroups();
+      final snapshot = await _firestore
+          .collection('groups')
+          .orderBy('updated_at', descending: true)
+          .get();
+
+      final remoteGroups = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+
       await localDb.cacheGroups(remoteGroups);
       return remoteGroups;
     } else {
@@ -29,21 +36,31 @@ class SplitPayRepositoryImpl {
     }
   }
 
-  /// Crea un grupo: requiere conexión a internet (y rol admin en reglas)
   Future<void> createGroup(RegistroDato groupData) async {
     final online = await networkInfo.isConnected;
     if (!online) {
       throw Exception('Sin conexión: conéctate a internet para crear un grupo.');
     }
-    await remoteDb.createGroup(groupData);
+    await _firestore.collection('groups').doc(groupData['id']).set(groupData);
     await localDb.cacheGroups([groupData]);
   }
 
-  /// Obtiene gastos de un grupo con respaldo automático en SQLite
   Future<List<RegistroDato>> getExpensesByGroup(String groupId) async {
     final online = await networkInfo.isConnected;
     if (online) {
-      final remoteExpenses = await remoteDb.getExpensesByGroup(groupId);
+      final snapshot = await _firestore
+          .collection('groups')
+          .doc(groupId)
+          .collection('expenses')
+          .orderBy('created_at', descending: true)
+          .get();
+
+      final remoteExpenses = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+
       await localDb.cacheExpenses(remoteExpenses);
       return remoteExpenses;
     } else {
@@ -51,19 +68,22 @@ class SplitPayRepositoryImpl {
     }
   }
 
-  /// Registra un gasto: bloquea en modo offline y dispara notificación local al guardar
   Future<void> addExpense(String groupId, RegistroDato expenseData) async {
     final online = await networkInfo.isConnected;
     if (!online) {
       throw Exception('Modo sin conexión activo: no puedes registrar gastos nuevos sin internet.');
     }
-    await remoteDb.addExpense(groupId, expenseData);
-    await localDb.cacheExpenses([expenseData]);
+    final groupRef = _firestore.collection('groups').doc(groupId);
+    await groupRef
+        .collection('expenses')
+        .doc(expenseData['id'])
+        .set(expenseData);
 
-    await NotificationService.showNotification(
-      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      title: 'Nuevo gasto en SplitPay',
-      body: '${expenseData['description']} por \$${expenseData['amount']}',
-    );
+    await groupRef.update({
+      'total_amount': FieldValue.increment(expenseData['amount'] as num),
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+
+    await localDb.cacheExpenses([expenseData]);
   }
 }
