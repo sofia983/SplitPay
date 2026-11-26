@@ -26,3 +26,4 @@ dependencies:
   flutter_local_notifications: ^17.2.3
   # Gestión de estado limpia
   provider: ^6.1.2
+  
